@@ -1,123 +1,141 @@
-﻿using System;
-using System.Linq;
+﻿using ControlCopy.Commands;
+using System;
 using System.IO;
-using System.Threading;
+using System.Text;
 using System.Threading.Tasks;
 using DSharpPlus;
 using DSharpPlus.CommandsNext;
-using DSharpPlus.Interactivity;
-using Microsoft.Extensions.Configuration;
+using DSharpPlus.CommandsNext.Exceptions;
+using DSharpPlus.Entities;
+using DSharpPlus.EventArgs;
+using DSharpPlus.Interactivity.Extensions;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 
-namespace PoisnCopy
+namespace ControlCopy
 {
-    internal class Program
+    public class Program
     {
-        /* This is the cancellation token we'll use to end the bot if needed(used for most async stuff). */
-        private CancellationTokenSource _cts { get; set; }
+        public readonly EventId BotEventId = new EventId(42, "ControlCopy");
+        
+        public DiscordClient Client { get; set; }
 
-        /* We'll load the app config into this when we create it a little later. */
-        private IConfigurationRoot _config;
+        public CommandsNextExtension Commands { get; set; }
 
-        /* These are the discord library's main classes */
-        private DiscordClient _discord;
-        private CommandsNextModule _commands;
-        private InteractivityModule _interactivity;
-
-        /* Use the async main to create an instance of the class and await it(async main is only available in C# 7.1 onwards). */
-
-        private static async Task Main(string[] args) => await new Program().InitBot(args);
-
-        private async Task InitBot(string[] args)
+        public static void Main(string[] args)
         {
-            try
+            var prog = new Program();
+            prog.RunBotAsync().GetAwaiter().GetResult();
+        }
+
+        public async Task RunBotAsync()
+        {
+            var json = "";
+            using (var fs = File.OpenRead("config.json"))
+            using (var sr = new StreamReader(fs, new UTF8Encoding(false)))
+                json = await sr.ReadToEndAsync();
+
+            var cfgjson = JsonConvert.DeserializeObject<ConfigJson>(json);
+            var cfg = new DiscordConfiguration
             {
-                Console.WriteLine("[info] Welcome to my bot!");
-                _cts = new CancellationTokenSource();
+                Token = cfgjson.Token,
+                TokenType = TokenType.Bot,
 
-                // Load the config file(we'll create this shortly)
-                Console.WriteLine("[info] Loading config file..");
-                _config = new ConfigurationBuilder()
-                    .SetBasePath(Directory.GetCurrentDirectory())
-                    .AddJsonFile("config.json", optional: false, reloadOnChange: true)
-                    .Build();
+                AutoReconnect = true,
+                MinimumLogLevel = LogLevel.Debug
+            };
 
-                // Create the DSharpPlus client
-                Console.WriteLine("[info] Creating discord client..");
-                _discord = new DiscordClient(new DiscordConfiguration
-                {
-                    Token = _config.GetValue<string>("discord:token"),
-                    TokenType = TokenType.Bot
-                });
+            this.Client = new DiscordClient(cfg);
 
-                // Create the interactivity module(I'll show you how to use this later on)
-                _interactivity = _discord.UseInteractivity(new InteractivityConfiguration()
-                {
-                    PaginationBehaviour = TimeoutBehaviour.Delete, // What to do when a pagination request times out
-                    PaginationTimeout = TimeSpan.FromSeconds(30), // How long to wait before timing out
-                    Timeout = TimeSpan.FromSeconds(30) // Default time to wait for interactive commands like waiting for a message or a reaction
-                });
+            this.Client.Ready += this.Client_Ready;
+            this.Client.GuildAvailable += this.Client_GuildAvailable;
+            this.Client.ClientErrored += this.Client_ClientError;
 
-                // Build dependancies and then create the commands module.
-                var deps = BuildDeps();
-                _commands = _discord.UseCommandsNext(new CommandsNextConfiguration
-                {
-                    StringPrefix = _config.GetValue<string>("discord:CommandPrefix"), // Load the command prefix(what comes before the command, eg "!" or "/") from our config file
-                    Dependencies = deps // Pass the dependancies
-                });
-
-                Console.WriteLine("[info] Loading command modules..");
-
-                var type = typeof(IModule); // Get the type of our interface
-                var types = AppDomain.CurrentDomain.GetAssemblies() // Get the assemblies associated with our project
-                    .SelectMany(s => s.GetTypes()) // Get all the types
-                    .Where(p => type.IsAssignableFrom(p) && !p.IsInterface); // Filter to find any type that can be assigned to an IModule
-
-                var typeList = types as Type[] ?? types.ToArray(); // Convert to an array
-                foreach (var t in typeList)
-                    _commands.RegisterCommands(t); // Loop through the list and register each command module with CommandsNext
-
-                Console.WriteLine($"[info] Loaded {typeList.Count()} modules.");
-                await RunAsync(args);
-            }
-            catch (Exception ex)
+            this.Client.UseInteractivity();
+            
+            var ccfg = new CommandsNextConfiguration
             {
-                // This will catch any exceptions that occur during the operation/setup of your bot.
+                StringPrefixes = new[] { cfgjson.CommandPrefix },
 
-                // Feel free to replace this with what ever logging solution you'd like to use.
-                // I may do a guide later on the basic logger I implemented in my most recent bot.
-                Console.Error.WriteLine(ex.ToString());
+                EnableDms = false,
+
+                EnableMentionPrefix = true
+            };
+
+            this.Commands = this.Client.UseCommandsNext(ccfg);
+
+            this.Commands.CommandExecuted += this.Commands_CommandExecuted;
+            this.Commands.CommandErrored += this.Commands_CommandErrored;
+
+            // let's add a converter for a custom type and a name
+            // var mathopcvt = new MathOperationConverter();
+            // Commands.RegisterConverter(mathopcvt);
+            // Commands.RegisterUserFriendlyTypeName<MathOperation>("operation");
+
+            this.Commands.RegisterCommands<BasicCommandsModule>();
+            this.Commands.RegisterCommands<CopyChannelCommand>();
+
+            // set up our custom help formatter
+            // this.Commands.SetHelpFormatter<SimpleHelpFormatter>();
+
+            await this.Client.ConnectAsync();
+
+            await Task.Delay(-1);
+        }
+
+        private Task Client_Ready(DiscordClient sender, ReadyEventArgs e)
+        {
+            sender.Logger.LogInformation(BotEventId, "Client is ready to process events.");
+            
+            return Task.CompletedTask;
+        }
+
+        private Task Client_GuildAvailable(DiscordClient sender, GuildCreateEventArgs e)
+        {
+            sender.Logger.LogInformation(BotEventId, $"Guild available: {e.Guild.Name}");
+
+            return Task.CompletedTask;
+        }
+
+        private Task Client_ClientError(DiscordClient sender, ClientErrorEventArgs e)
+        {
+            sender.Logger.LogError(BotEventId, e.Exception, "Exception occured");
+
+            return Task.CompletedTask;
+        }
+
+        private Task Commands_CommandExecuted(CommandsNextExtension sender, CommandExecutionEventArgs e)
+        {
+            e.Context.Client.Logger.LogInformation(BotEventId, $"{e.Context.User.Username} successfully executed '{e.Command.QualifiedName}'");
+
+            return Task.CompletedTask;
+        }
+
+        private async Task Commands_CommandErrored(CommandsNextExtension sender, CommandErrorEventArgs e)
+        {
+            e.Context.Client.Logger.LogError(BotEventId, $"{e.Context.User.Username} tried executing '{e.Command?.QualifiedName ?? "<unknown command>"}' but it errored: {e.Exception.GetType()}: {e.Exception.Message ?? "<no message>"}", DateTime.Now);
+
+            if (e.Exception is ChecksFailedException ex)
+            {
+                var emoji = DiscordEmoji.FromName(e.Context.Client, ":no_entry:");
+
+                var embed = new DiscordEmbedBuilder
+                {
+                    Title = "Access denied",
+                    Description = $"{emoji} You do not have the permissions required to execute this command.",
+                    Color = new DiscordColor(0xFF0000) // red
+                };
+                await e.Context.RespondAsync(embed);
             }
-        }
+}
+    }
 
-        private async Task RunAsync(string[] args)
-        {
-            // Connect to discord's service
-            Console.WriteLine("Connecting..");
-            await _discord.ConnectAsync();
-            Console.WriteLine("Connected!");
-            var connections = _discord.Presences.Count;
-            Console.WriteLine($"I am running on {connections} servers");
+    public struct ConfigJson
+    {
+        [JsonProperty("token")]
+        public string Token { get; private set; }
 
-            // Keep the bot running until the cancellation token requests we stop
-            while (!_cts.IsCancellationRequested)
-                await Task.Delay(TimeSpan.FromMinutes(1));
-        }
-
-        /*
-         DSharpPlus has dependancy injection for commands, this builds a list of dependancies.
-         We can then access these in our command modules.
-        */
-
-        private DependencyCollection BuildDeps()
-        {
-            using var deps = new DependencyCollectionBuilder();
-
-            deps.AddInstance(_interactivity) // Add interactivity
-                .AddInstance(_cts) // Add the cancellation token
-                .AddInstance(_config) // Add our config
-                .AddInstance(_discord); // Add the discord client
-
-            return deps.Build();
-        }
+        [JsonProperty("prefix")]
+        public string CommandPrefix { get; private set; }
     }
 }

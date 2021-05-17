@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.30611.23
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PoisnCopy", "PoisnCopy.csproj", "{071E04E6-CEDB-414B-BABA-E2AEAF939586}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlCopy", "ControlCopy.csproj", "{071E04E6-CEDB-414B-BABA-E2AEAF939586}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -1,0 +1,6 @@
+﻿{
+    "token": "Your bot token here",
+    "appId": "Your app ID here",
+    "appSecret": "Your app secret here",
+    "prefix": "cc."
+}

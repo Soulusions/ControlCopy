@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace PoisnCopy
+namespace ControlCopy
 {
     public interface IModule
     {

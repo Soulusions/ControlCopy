@@ -2,140 +2,313 @@
 using DSharpPlus.CommandsNext;
 using DSharpPlus.CommandsNext.Attributes;
 using DSharpPlus.Entities;
-using DSharpPlus.Interactivity;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using static DSharpPlus.Entities.DiscordEmbedBuilder;
+using System.Net;
+using System.IO;
 
-namespace PoisnCopy.Commands
+using static ControlCopy.Utilities;
+using DSharpPlus.Interactivity.Extensions;
+
+namespace ControlCopy.Commands
 {
-    [RequirePermissions(Permissions.Administrator)]
-    [Hidden]
-    public class CopyChannelCommand : IModule
-    {
-        [Command("copychannel")]
-        [Description("Copy a channel")]
-        public async Task CopyChannel(CommandContext ctx)
-        {
-            await ctx.TriggerTypingAsync();
+	[RequirePermissions(
+		Permissions.SendMessages &
+		Permissions.AccessChannels &
+		Permissions.ManageChannels &
+		Permissions.ReadMessageHistory &
+		Permissions.EmbedLinks &
+		Permissions.AttachFiles
+	)]
+	public class CopyChannelCommand : BaseCommandModule
+	{
+		[Command("wizard")]
+		[Description("Lists channels and categories, and formats the copy command based on user input")]
+		public async Task Wizard(CommandContext ctx)
+		{
+			if (isMemberDisallowed(ctx.Member))
+				return; // User isn't an administrator or doesn't have the "Archiver" role in any server. Aborting
 
-            await ctx.RespondAsync("Which Channel would you like to copy? (copy and paste the Id) Pleaes wait while I find all of your channels, I will give you a message when I have found them all.");
+			await ctx.TriggerTypingAsync();
 
-            await ctx.TriggerTypingAsync();
-            var textChannels = ctx.Guild.Channels.Where(i => i.Type == ChannelType.Text).ToList();
-            foreach (var txtChan in textChannels)
-            {
-                await ctx.TriggerTypingAsync();
-                await ctx.RespondAsync($"`{txtChan.Id}-{txtChan.Name}`");
-                await ctx.TriggerTypingAsync();
-            }
-            await ctx.RespondAsync($"Thats all of the channels!");
+			await ctx.RespondAsync("Listing all available channels and categories from this server. Please click the :arrow_up_small: reaction under the channel or category you wish to copy");
 
-            var intr = ctx.Client.GetInteractivityModule(); // Grab the interactivity module
-            var response = await intr.WaitForMessageAsync(
-                c => c.Author.Id == ctx.Message.Author.Id, // Make sure the response is from the same person who sent the command
-                TimeSpan.FromSeconds(60) // Wait 60 seconds for a response instead of the default 30 we set earlier!
-            );
+			await ctx.TriggerTypingAsync();
+			var elements = Utilities.allSupportedChannels(ctx).OrderBy(c => c.Position).ToList();
 
-            if (response == null)
-            {
-                await ctx.RespondAsync("Sorry, I didn't get a response!");
-                return;
-            }
+			await ctx.Channel.SendMessageAsync("**Available channels:**");
+			DiscordChannel selectedElement = null;
+			List<Tuple<DiscordMessage, ulong>> listedChannels = new List<Tuple<DiscordMessage, ulong>>();
+			Utilities.Binder selectedElementBinder = () => {
+				foreach (var l in listedChannels)
+				{
+					if (l.Item1.GetReactionsAsync(DiscordEmoji.FromName(ctx.Client, ":arrow_up_small:")).Result.FirstOrDefault(u => u == ctx.Message.Author) != null)
+					{
+						selectedElement = ctx.Guild.GetChannel(l.Item2);
+						return true;
+					}
+				}
+				return false;
+			};
+			foreach (var e in elements)
+			{
+				await ctx.TriggerTypingAsync();
+				listedChannels.Add(new Tuple<DiscordMessage, ulong>(await ctx.Channel.SendMessageAsync((e.Type != ChannelType.Category ? "`┕ " : "`") + $"{e.Name}`"), e.Id));
+				await listedChannels.Last().Item1.CreateReactionAsync(DiscordEmoji.FromName(ctx.Client, ":arrow_up_small:"));
 
-            var selectedChannel = textChannels.FirstOrDefault(i => i.Id.ToString() == response.Message.Content);
+				if (selectedElementBinder())
+					break;
+			}
 
-            if (selectedChannel == null)
-            {
-                await ctx.RespondAsync("Sorry, but that channel does not exist!");
-                return;
-            }
+			await ctx.Channel.SendMessageAsync("Done listing");
 
-            await ctx.RespondAsync($"Copy command: `pc.loadchannel {selectedChannel.GuildId} {selectedChannel.Id}`");
-        }
+			if (selectedElement == null)
+			{
+				Utilities.executeFor((() => selectedElementBinder()), TimeSpan.FromSeconds(60));
+				if (selectedElement == null)
+				{
+					await ctx.Channel.SendMessageAsync("No reaction provided. Aborting.");
+					return;
+				}
+			}
 
-        [Command("loadchannel")]
-        [Description("Load a copied channel")]
-        public async Task LoadChannel(CommandContext ctx, ulong guildId, ulong channelId)
-        {
-            var guild = await ctx.Client.GetGuildAsync(guildId);
-            var selectedChannel = guild.GetChannel(channelId);
+			bool elementIsCategory = selectedElement.Type == ChannelType.Category;
+			string elementType = elementIsCategory ? "category" : "channel";
 
-            await ctx.RespondAsync("What do you want the new channel to be named?");
+			var keepNameMessage = await ctx.RespondAsync($"Would you like to keep original {elementType} name (so you won't be prompted to name the new one)?");
 
-            var intr = ctx.Client.GetInteractivityModule(); // Grab the interactivity module
-            var response = await intr.WaitForMessageAsync(
-                c => c.Author.Id == ctx.Message.Author.Id, // Make sure the response is from the same person who sent the command
-                TimeSpan.FromSeconds(60) // Wait 60 seconds for a response instead of the default 30 we set earlier!
-            );
+			bool keepName = true;
 
-            if (response == null)
-            {
-                await ctx.RespondAsync("Sorry, I didn't get a response!");
-                return;
-            }
+			var keepNameResult = await polarReaction(ctx, keepNameMessage);
+			if (keepNameResult != PolarReactionState.TimedOut)
+			{
+				keepName = (keepNameResult == PolarReactionState.Yes);
+			}
+			else
+				await ctx.Channel.SendMessageAsync($"No reaction given. The {elementType} name will be kept by default");
 
-            if (string.IsNullOrEmpty(response.Message.Content))
-            {
-                await ctx.RespondAsync("Name cannot be empty!");
-                return;
-            }
+			await ctx.RespondAsync("Copy the following command:");
+			await ctx.Channel.SendMessageAsync($"`cc.copy {selectedElement.GuildId} {selectedElement.Id} {keepName.ToString()}`");
+		}
 
-            var channelName = response.Message.Content;
+		[Command("copy")]
+		[Description("Copies channel or category from given guild and channel ID. Note you may need to enable developer mode to copy the IDs directly")]
+		public async Task Copy(CommandContext ctx, 
+			[Description("The source guild ID. (Right click / three-dot menu of guild >> Copy ID)")] ulong guildId, 
+			[Description("The source element ID. (Right click / long press channel or category >> Copy ID)")] ulong elementId, 
+			[Description("\"True\" if user wishes to keep original channel or category name, \"False\" otherwise")] bool keepName
+		)
+		{
+			
+			DiscordGuild guild;
+			try
+			{
+				guild = await ctx.Client.GetGuildAsync(guildId);
+			}
+			catch (DSharpPlus.Exceptions.NotFoundException)
+			{
+				await ctx.RespondAsync("Guild not found.");
+				return;
+			}
 
-            await ctx.RespondAsync("Starting copy...");
+			if (isMemberDisallowed(ctx.Member) || isMemberDisallowed(await guild.GetMemberAsync(ctx.Member.Id)))
+				return; // User isn't an administrator or doesn't have the "Archivist" role in any server. Aborting
+			
+			DiscordChannel selectedElement;
+			try
+			{
+				selectedElement = guild.GetChannel(elementId);
+			}
+			catch (DSharpPlus.Exceptions.NotFoundException)
+			{
+				await ctx.RespondAsync("Channel not found.");
+				return;
+			}
 
-            await ctx.RespondAsync("Collecting messages...");
+			string elementName;
+			bool elementIsCategory = selectedElement.Type == ChannelType.Category;
+			string elementType = elementIsCategory ? "category" : "channel";
 
-            var messag = await selectedChannel.GetMessagesAsync();
+			if (keepName)   // If user wishes to keep original element name
+				elementName = selectedElement.Name;
+			else
+			{
+				await ctx.RespondAsync($"What do you want the new {elementType} to be named?");
 
-            var messCopy = messag.ToList();
+				var response = await ctx.Message.GetNextMessageAsync(
+					c => c.Author.Id == ctx.Message.Author.Id,
+					TimeSpan.FromSeconds(60)
+				);
 
-            var more = await selectedChannel.GetMessagesAsync(100, messag.LastOrDefault().Id);
+				if (response.TimedOut)
+				{
+				await ctx.Channel.SendMessageAsync("No input given. Aborting.");
+					return;
+				}
 
-            while (more.Count > 0)
-            {
-                messCopy.AddRange(more);
-                more = await selectedChannel.GetMessagesAsync(100, more.LastOrDefault().Id);
-            }
+				if (string.IsNullOrEmpty(response.Result.Content))
+				{
+					await ctx.Channel.SendMessageAsync("Name cannot be empty.");
+					return;
+				}
 
-            await ctx.RespondAsync("Organizing messages...");
+				elementName = response.Result.Content;
+			}
 
-            messCopy.Reverse();
+			await ctx.Channel.SendMessageAsync("**Starting copy**");
 
-            var newMess = new List<DiscordMessage>();
+			string tempDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+			Directory.CreateDirectory(tempDirectory);
 
-            await ctx.RespondAsync("Creating channel...");
+			DiscordChannel newCategory = null;
+			if (elementIsCategory)
+				newCategory = await ctx.Guild.CreateChannelAsync(elementName, ChannelType.Category);
 
-            var newChan = await ctx.Guild.CreateChannelAsync(channelName, selectedChannel.Type);
+			await ctx.Channel.SendMessageAsync("Collecting messages...");
 
-            await ctx.RespondAsync($"Posting {messCopy.Count} messages... (this could take awhile)");
+			foreach (var channel in (elementIsCategory ? onlySupported(selectedElement).OrderBy(c => c.Position).ToArray() : new DiscordChannel[] {selectedElement})) {
+				
+				await ctx.Channel.SendMessageAsync($"Creating channel {channel.Name}...");
+				var newChannel = await ctx.Guild.CreateChannelAsync((elementIsCategory ? channel.Name : elementName), channel.Type);
+				await newChannel.ModifyAsync(c => c.Topic = channel.Topic);
+				if (channel.IsNSFW)
+					await newChannel.ModifyAsync(c => c.Nsfw = true);
+				foreach (DiscordOverwrite overwrite in channel.PermissionOverwrites)
+				{
+					try
+					{
+						if (overwrite.Type == OverwriteType.Member)
+						{
+							DiscordMember overwriteMember = await overwrite.GetMemberAsync();
+							if (ctx.Guild.Members.Where(r => r.Value.Id == overwriteMember.Id).Count() > 0)
+								await newChannel.AddOverwriteAsync((await ctx.Guild.GetMemberAsync(overwriteMember.Id)), overwrite.Allowed, overwrite.Denied);
+						}
+						else
+						{
+							DiscordRole overwriteRole = await overwrite.GetRoleAsync();
+							var matchingRole = ctx.Guild.Roles.Where(r => r.Value.Name == overwriteRole.Name);
+							if (matchingRole.Count() > 0)
+								await newChannel.AddOverwriteAsync(ctx.Guild.GetRole(matchingRole.First().Value.Id), overwrite.Allowed, overwrite.Denied);
+						}
+					}
+					catch (DSharpPlus.Exceptions.NotFoundException)
+					{
+						
+					}
+				}
 
-            foreach (var mes in messCopy)
-            {
-                if (!string.IsNullOrEmpty(mes.Content))
-                {
-                    var whAu = new EmbedAuthor { Name = mes.Author.Username, IconUrl = mes.Author.AvatarUrl };
-                    var what = new DiscordEmbedBuilder { Description = mes.Content, Author = whAu, Timestamp = mes.Timestamp };
+				var firstFetchedMessages = await channel.GetMessagesAsync();
 
-                    await newChan.SendMessageAsync(null, false, what);
-                }
+				if (firstFetchedMessages.Count == 0)
+				{
+					if (elementIsCategory)
+						await newChannel.ModifyAsync(c => c.Parent = newCategory);
+					continue; // Empty channel - skip
+				}
 
-                if (mes.Attachments.Count > 0)
-                {
-                    foreach (var att in mes.Attachments)
-                    {
-                        var whAu = new EmbedAuthor { Name = mes.Author.Username, IconUrl = mes.Author.AvatarUrl };
-                        var what = new DiscordEmbedBuilder { ImageUrl = att.Url, Author = whAu, Timestamp = mes.Timestamp };
+				List<DiscordMessage> bufferedMessagesList = firstFetchedMessages.ToList();
 
-                        await newChan.SendMessageAsync(null, false, what);
-                    }
-                }
-            }
+				var more = await channel.GetMessagesBeforeAsync(firstFetchedMessages.Last().Id, 100);
+				int messageCount = firstFetchedMessages.Count();
 
-            await ctx.RespondAsync($"{newChan.Name} copy complete!");
-        }
-    }
+				while (more.Count > 0)
+				{
+					messageCount += more.Count();
+					bufferedMessagesList = more.ToList();
+					more = await channel.GetMessagesBeforeAsync(more.First().Id, 100); // "Scrolling" to the first message
+				}
+				await ctx.Channel.SendMessageAsync($"Posting {messageCount} messages in {channel.Name}... (this might take a while)");
+
+				do
+				{
+					bufferedMessagesList.AddRange(more);
+					bufferedMessagesList.Reverse();
+					foreach (var mes in bufferedMessagesList)
+					{
+						if (mes.MessageType != MessageType.Default)
+						{
+							switch (mes.MessageType)
+							{
+								case MessageType.ChannelPinnedMessage:
+								var time = new DiscordEmbedBuilder {Description = $":pushpin: {mes.Author.Username} has pinned a message in this channel", Timestamp = mes.Timestamp};
+								await newChannel.SendMessageAsync(null, time);
+								break;
+							}
+							continue;
+						}
+
+						EmbedAuthor embedAuthor = null;
+						DiscordEmbedBuilder embed = null;
+						DiscordMessage newMessage = null;
+						if (mes.Embeds.Count > 0)
+						{
+							if (mes.Author == ctx.Client.CurrentUser && mes.Embeds.First().Type == "rich")
+							{
+								DiscordEmbed CCEmbed = mes.Embeds.First();
+								embedAuthor = new EmbedAuthor { Name = CCEmbed.Author.Name, IconUrl = CCEmbed.Author.IconUrl.ToString() };
+								embed = new DiscordEmbedBuilder { Description = CCEmbed.Description, Author = embedAuthor, Timestamp = CCEmbed.Timestamp };
+								newMessage = await newChannel.SendMessageAsync(null, embed);
+							}
+							else
+							{
+								newMessage = await newChannel.SendMessageAsync($"{mes.Author.Username}'s attached embed(s):");
+								foreach (DiscordEmbed userEmbed in mes.Embeds)
+								{
+									if (new String[]{"image", "gifv"}.Contains(userEmbed.Type))
+										await newChannel.SendMessageAsync(userEmbed.Url.ToString());
+									else	
+										await newChannel.SendMessageAsync(null, userEmbed);
+								}
+							}
+						}
+						else
+						{
+							embedAuthor = new EmbedAuthor { Name = mes.Author.Username, IconUrl = mes.Author.AvatarUrl };
+							embed = new DiscordEmbedBuilder { Description = mes.Content, Author = embedAuthor, Timestamp = mes.Timestamp };
+							newMessage = await newChannel.SendMessageAsync(null, embed);
+						}
+
+						if (mes.Pinned)
+						{
+							await newMessage.PinAsync();
+							var lastMessage = (await newChannel.GetMessagesAsync(1)).First();
+							if (lastMessage.MessageType == MessageType.ChannelPinnedMessage)
+								await newChannel.DeleteMessageAsync(lastMessage);
+						}
+
+						if (mes.Attachments.Count > 0)
+						{
+							foreach (var att in mes.Attachments)
+							{
+								{
+									using (WebClient wc = new WebClient())
+									{
+										wc.DownloadFile(new System.Uri(att.Url), $"{tempDirectory}/{att.FileName}");
+									}
+									using (FileStream fs = File.OpenRead($"{tempDirectory}/{att.FileName}"))
+									{
+										await newChannel.SendMessageAsync((new DiscordMessageBuilder()).WithFile(att.FileName, fs));
+									}
+									File.Delete($"{tempDirectory}/{att.FileName}");
+								}
+
+							}
+						}
+					}
+
+					more = await channel.GetMessagesAfterAsync(bufferedMessagesList.Last().Id);
+					bufferedMessagesList.Clear();
+				}
+				while (more.Count > 0);
+
+				if (elementIsCategory)
+					await newChannel.ModifyAsync(c => c.Parent = newCategory);
+			}
+
+			await ctx.Channel.SendMessageAsync($"Copy of {elementType} {elementName} complete!");
+		}
+	}
 }

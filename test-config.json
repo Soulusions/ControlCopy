@@ -1,8 +1,0 @@
-﻿{
-  "discord": {
-    "token": "xxx",
-    "appId": "xxx",
-    "appSecret": "xxx",
-    "CommandPrefix": "pc."
-  }
-}

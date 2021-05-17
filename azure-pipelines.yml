@@ -30,7 +30,7 @@ steps:
   inputs:
     command: 'publish'
     publishWebProjects: false
-    projects: '**/PoisnCopy.csproj'
+    projects: '**/ControlCopy.csproj'
     arguments: '-c Release'
     zipAfterPublish: false
 - task: PublishBuildArtifacts@1
