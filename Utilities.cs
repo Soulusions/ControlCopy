@@ -69,6 +69,6 @@ namespace ControlCopy {
 			return cat.Children.Where(c => !(new ChannelType[]{ChannelType.Voice, ChannelType.Unknown}.Contains(c.Type)));
 		};
 
-		public static Predicate<DiscordMember> isMemberDisallowed = (m) => m.Roles.Where(r => r.Permissions.HasPermission(Permissions.Administrator) || r.Name == "Archivist").Count() == 0 && !m.IsOwner;
+		public static Predicate<DiscordMember> isMemberDisallowed = (m) => m.Roles.Where(r => r.Permissions.HasPermission(Permissions.Administrator) || r.Name == "Archiviste").Count() == 0 && !m.IsOwner;
 	}
 }
