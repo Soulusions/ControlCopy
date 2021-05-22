@@ -30,15 +30,9 @@ namespace ControlCopy
 
         public async Task RunBotAsync()
         {
-            var json = "";
-            using (var fs = File.OpenRead("config.json"))
-            using (var sr = new StreamReader(fs, new UTF8Encoding(false)))
-                json = await sr.ReadToEndAsync();
-
-            var cfgjson = JsonConvert.DeserializeObject<ConfigJson>(json);
             var cfg = new DiscordConfiguration
             {
-                Token = cfgjson.Token,
+                Token = Environment.GetEnvironmentVariable("TOKEN"),
                 TokenType = TokenType.Bot,
 
                 AutoReconnect = true,
@@ -55,7 +49,7 @@ namespace ControlCopy
             
             var ccfg = new CommandsNextConfiguration
             {
-                StringPrefixes = new[] { cfgjson.CommandPrefix },
+                StringPrefixes = new[] { "cc." },
 
                 EnableDms = false,
 
@@ -128,14 +122,5 @@ namespace ControlCopy
                 await e.Context.RespondAsync(embed);
             }
 }
-    }
-
-    public struct ConfigJson
-    {
-        [JsonProperty("token")]
-        public string Token { get; private set; }
-
-        [JsonProperty("prefix")]
-        public string CommandPrefix { get; private set; }
     }
 }

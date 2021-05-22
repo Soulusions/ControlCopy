@@ -10,12 +10,12 @@ using DSharpPlus.Interactivity.Extensions;
 using System.Threading.Tasks;
 
 namespace ControlCopy {
-    public static class Utilities {
-        public delegate IEnumerable<DiscordChannel> Filter(CommandContext ctx);
-        public delegate IEnumerable<DiscordChannel> FilterChannel(DiscordChannel cat);
-        public delegate bool Binder();
-        public delegate Task<bool> AsyncBinder();
-        // public delegate void Printer(CommandContext ctx, string s);
+		public static class Utilities {
+				public delegate IEnumerable<DiscordChannel> Filter(CommandContext ctx);
+				public delegate IEnumerable<DiscordChannel> FilterChannel(DiscordChannel cat);
+				public delegate bool Binder();
+				public delegate Task<bool> AsyncBinder();
+				// public delegate void Printer(CommandContext ctx, string s);
 
 		public static void executeFor(Func<bool> func, TimeSpan timeSpan) {
 			Stopwatch s = Stopwatch.StartNew();
@@ -56,7 +56,7 @@ namespace ControlCopy {
 				return PolarReactionState.TimedOut;
 		}
 
-        public static Filter allSupportedChannels = (ctx) => {
+				public static Filter allSupportedChannels = (ctx) => {
 			var firstFiltering = ctx.Guild.Channels.Select(e => e.Value).Where(c => !(new ChannelType[]{ChannelType.Voice, ChannelType.Unknown}.Contains(c.Type)));
 			var secondFiltering = firstFiltering.Except(
 				firstFiltering.Where(c => c.Type == ChannelType.Category)
