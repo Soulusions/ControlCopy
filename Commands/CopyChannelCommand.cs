@@ -313,7 +313,7 @@ namespace ControlCopy.Commands
                 await using var fs = GenerateStreamFromString(mes.Content);
                 var msg = await new DiscordMessageBuilder()
                                 .WithContent($"From: {mes.Author.Username}")
-                                .WithFiles(new Dictionary<string, Stream>() {{"message.txt", fs}})
+                                .AddFiles(new Dictionary<string, Stream>() {{"message.txt", fs}})
                                 .SendAsync(newChannel);
               }
             }
@@ -338,7 +338,7 @@ namespace ControlCopy.Commands
 
                   using (FileStream fs = File.OpenRead($"{tempDirectory}/{att.FileName}"))
                   {
-                    await newChannel.SendMessageAsync((new DiscordMessageBuilder()).WithFile(att.FileName, fs));
+                    await newChannel.SendMessageAsync((new DiscordMessageBuilder()).AddFile(att.FileName, fs));
                   }
 
                   File.Delete($"{tempDirectory}/{att.FileName}");
