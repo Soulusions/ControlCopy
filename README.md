@@ -27,8 +27,8 @@ dotnet run
 - I personally appreciate any issue or suggestion.
 
 ### Credit
-Soulusions: [Click Here](https://github.com/Soulusions/ControlCopy)
-Minabsapi: [Click Here](https://github.com/Minabsapi/ControlCopy)
+- Soulusions: [Click Here](https://github.com/Soulusions/ControlCopy)
+- Minabsapi: [Click Here](https://github.com/Minabsapi/ControlCopy)
 
 ### Original Author
-PoisnCopy: [Click Here](https://github.com/PoisnFang/PoisnCopy)
+- PoisnCopy: [Click Here](https://github.com/PoisnFang/PoisnCopy)
