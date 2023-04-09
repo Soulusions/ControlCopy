@@ -32,7 +32,8 @@ namespace ControlCopy
     {
       var cfg = new DiscordConfiguration
       {
-        Token = Environment.GetEnvironmentVariable("TOKEN"),
+        //Token = Environment.GetEnvironmentVariable("TOKEN"),
+        Token = "INSERT_TOKEN_HERE",
         TokenType = TokenType.Bot,
 
         AutoReconnect = true,
